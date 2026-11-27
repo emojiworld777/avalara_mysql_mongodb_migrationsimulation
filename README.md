@@ -1,79 +1,98 @@
+<div align="center">
+
 # Avalara-Inspired MySQL to MongoDB Atlas Migration
 
-A database migration demonstration using **MySQL, MongoDB Atlas, and MongoDB Relational Migrator**.
+**End-to-end relational-to-document database migration simulation using MySQL, MongoDB Atlas, and MongoDB Relational Migrator.**
+
+![Python](https://img.shields.io/badge/Python-3.14+-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![MySQL](https://img.shields.io/badge/MySQL-9.7.2-4479A1?style=for-the-badge&logo=mysql&logoColor=white)
+![MongoDB](https://img.shields.io/badge/MongoDB_Atlas-Document_DB-47A248?style=for-the-badge&logo=mongodb&logoColor=white)
+![uv](https://img.shields.io/badge/uv-Package_Manager-DE5FE9?style=for-the-badge)
+
+[Overview](#1-project-overview) • [Architecture](#2-migration-architecture) • [Schema Design](#4-mongodb-target-design) • [Results](#6-migration-results) • [Quick Start](#9-running-the-python-dataset-generator) • [Reports & Docs](#10-documentation--reports)
+
+</div>
+
+---
 
 ## 1. Project Overview
 
-This project demonstrates the migration of an Avalara-inspired relational database from MySQL to MongoDB Atlas.
+This project demonstrates the migration of an Avalara-inspired relational tax-management database from **MySQL** to **MongoDB Atlas**.
 
-The source database represents a simplified tax management system containing companies, customers, tax codes, items, transactions, and transaction lines.
+The source database models a simplified tax management system containing **companies**, **customers**, **tax codes**, **items**, **transactions**, and **transaction lines**.
 
-The project demonstrates:
-- Relational database schema design in MySQL.
-- Synthetic dataset generation and loading.
-- Relational-to-document schema mapping.
-- Embedding related records in MongoDB.
-- Snapshot migration using MongoDB Relational Migrator.
-- Migration verification and database backup.
+### Key Highlights
+- **Relational Schema Design:** Normalized 6-table MySQL schema with foreign-key constraints and composite indexing.
+- **Synthetic Dataset Pipeline:** Reproducible Python data generator & loader (`uv`, `pandas`, `mysql-connector-python`).
+- **Document Schema Mapping:** Denormalization by embedding `transaction_lines` inside parent `transactions` documents.
+- **Snapshot Migration & Verification:** Executed using **MongoDB Relational Migrator** (`Baseline` and `Optimized` `.relmig` configs included).
+- **Full Reproducibility:** Includes MySQL SQL dumps and MongoDB `mongodump` BSON backups.
 
-**Important:** This is an academic reconstruction inspired by publicly documented Avalara AvaTax concepts. It uses synthetic data and does not represent Avalara's proprietary internal database schema or production data.
+> [!NOTE]
+> This is an academic reconstruction inspired by publicly documented Avalara AvaTax concepts. It uses synthetic data and does not represent Avalara's proprietary internal database schema or production data.
 
-## 2. Technology Stack
+---
+
+## 2. Migration Architecture
+
+```mermaid
+flowchart LR
+    A["Python Generator\n(dataset/generate_dataset.py)"] --> B["Synthetic CSVs\n(8,743 records)"]
+    B --> C["MySQL Source\n(avalara_simulation • 6 tables)"]
+    C --> D["MongoDB Relational Migrator\n(Avalara_Optimized_Migration.relmig)"]
+    D --> E["MongoDB Atlas\n(avalara_migration • 5 collections, 2,840 docs)"]
+    C -.-> F["MySQL Dump\n(mysql/avalara_simulation.sql)"]
+    E -.-> G["MongoDB Backup\n(mongodb/backup/avalara_migration/)"]
+```
+
+### Technology Stack
 
 | Technology | Purpose |
 |---|---|
-| MySQL 9.7.2 | Source relational database |
-| MongoDB Atlas | Target document database |
-| MongoDB Relational Migrator | Schema mapping and migration |
-| MongoDB Database Tools | Database backup and restoration |
-| MySQL Workbench | Database management and SQL export |
-| MongoDB Compass | MongoDB database inspection |
-| Python 3.14.6 | Dataset generation and loading |
-| uv | Python dependency management |
+| **MySQL 9.7.2** | Source relational database |
+| **MongoDB Atlas** | Target cloud document database |
+| **MongoDB Relational Migrator** | Schema mapping, snapshot migration & verification |
+| **MongoDB Database Tools** | `mongodump` / `mongorestore` backup and restoration |
+| **MySQL Workbench** | Database management and SQL export |
+| **MongoDB Compass** | Document inspection and query verification |
+| **Python 3.14.6** | Synthetic dataset generation and MySQL loading |
+| **uv** | Fast Python dependency management |
+
+---
 
 ## 3. Source Database: MySQL
 
-The source database is named `avalara_simulation`.
-
-It contains six relational tables:
+The source database (`avalara_simulation`) contains **6 relational tables** totaling **8,743 synthetic records**:
 
 | Table | Records | Description |
 |---|---:|---|
-| companies | 10 | Company information |
-| customers | 500 | Customer records |
-| tax_codes | 30 | Tax classification codes |
-| items | 300 | Products and services |
-| transactions | 2,000 | Transaction headers |
-| transaction_lines | 5,903 | Individual transaction line items |
+| `companies` | 10 | Company information |
+| `customers` | 500 | Customer records |
+| `tax_codes` | 30 | Tax classification codes |
+| `items` | 300 | Products and services |
+| `transactions` | 2,000 | Transaction headers |
+| `transaction_lines` | 5,903 | Individual transaction line items |
 | **Total** | **8,743** | |
-
-All records are synthetically generated for demonstration purposes.
-
-### Relational Schema
-
-The source schema contains foreign-key relationships between companies, customers, items, tax codes, transactions, and transaction lines.
 
 The `transaction_lines` table references its parent transaction using a composite relationship involving `company_id` and `transaction_id`.
 
+---
+
 ## 4. MongoDB Target Design
 
-The target database in MongoDB Atlas is named `avalara_migration`.
+The target database in MongoDB Atlas (`avalara_migration`) consolidates the 6 relational tables into **5 top-level collections**:
 
-The optimized MongoDB schema contains five top-level collections:
-
-| MongoDB Collection | Source Table |
+| MongoDB Collection | Source Table(s) |
 |---|---|
-| companies | companies |
-| customers | customers |
-| items | items |
-| taxCodes | tax_codes |
-| transactions | transactions + transaction_lines |
+| `companies` | `companies` |
+| `customers` | `customers` |
+| `items` | `items` |
+| `taxCodes` | `tax_codes` |
+| `transactions` | `transactions` + `transaction_lines` *(embedded)* |
 
 ### Embedded Document Mapping
 
-Instead of maintaining transaction lines as a separate collection, the optimized mapping embeds them inside their corresponding transaction document.
-
-Example:
+Instead of keeping `transaction_lines` in a separate collection, the optimized mapping embeds line items directly inside their parent `transaction` document so a transaction and all its lines can be fetched in a single read:
 
 ```javascript
 {
@@ -84,7 +103,6 @@ Example:
   status: "Committed",
   totalAmount: 2500.00,
   totalTax: 300.00,
-
   lines: [
     {
       lineId: 1,
@@ -102,120 +120,52 @@ Example:
 }
 ```
 
-This design allows a transaction and its associated line items to be retrieved together.
-
-The original MySQL `transaction_lines` table remains unchanged.
+---
 
 ## 5. Migration Process
 
-The migration was performed using MongoDB Relational Migrator.
+1. **Source Database Preparation:** Created MySQL schema & indexes, generated synthetic CSVs, and loaded data into `avalara_simulation`.
+2. **Relational Mapping:** Connected MySQL and MongoDB Atlas in Relational Migrator, embedded `transaction_lines` inside `transactions`, and removed the standalone `transactionLines` mapping.
+3. **Migration Configuration:**
+   - **Mode:** Snapshot (`avalara_simulation` → `avalara_migration`)
+   - **Collections:** 5 target collections
+   - **Data Verification:** Enabled (`Drop destination collections: Disabled`)
+4. **Migration Execution:** Snapshot migration processed all six source tables and completed successfully.
 
-### Step 1: Source Database Preparation
-- Created the MySQL schema.
-- Created the required indexes.
-- Generated synthetic records.
-- Loaded the dataset into MySQL.
-
-### Step 2: Relational Mapping
-- Connected the MySQL source database.
-- Connected the MongoDB Atlas destination.
-- Examined the generated MongoDB schema suggestions.
-- Configured the transaction-line relationship as an embedded array.
-- Removed the standalone `transactionLines` target mapping.
-
-### Step 3: Migration Configuration
-
-| Setting | Configuration |
-|---|---|
-| Migration mode | Snapshot |
-| Source database | avalara_simulation |
-| Destination database | avalara_migration |
-| Destination collections | 5 |
-| Data verification | Enabled |
-| Drop destination collections | Disabled |
-
-### Step 4: Migration Execution
-
-The snapshot migration processed all six source tables and completed successfully.
+---
 
 ## 6. Migration Results
 
-The optimized migration produced five top-level MongoDB collections.
-
 | Collection | Documents |
 |---|---:|
-| companies | 10 |
-| customers | 500 |
-| items | 300 |
-| taxCodes | 30 |
-| transactions | 2,000 |
+| `companies` | 10 |
+| `customers` | 500 |
+| `items` | 300 |
+| `taxCodes` | 30 |
+| `transactions` | 2,000 *(with 5,903 embedded line items)* |
 | **Total top-level documents** | **2,840** |
 
-The 5,903 transaction-line records are represented as embedded documents inside the 2,000 transaction documents, rather than as a separate collection.
-
 ### Migration Verification
-
-MongoDB Relational Migrator reported:
-
 - Snapshot processing completed for all six source tables.
-- Five target collections identified for verification.
-- Verification completed successfully.
-- No inconsistencies found in the verified collections.
+- Five target collections verified with no inconsistencies found.
+- Generated MongoDB `_id` fields were skipped during comparison since they have no relational counterpart.
 
-The verification log noted that generated MongoDB `_id` fields were skipped because corresponding fields do not exist in the relational source database.
+> [!IMPORTANT]
+> The migration review summary reported 8,565 rows to migrate while the MySQL source contained 8,743 records (a difference of 178). The verification result applies to the collections and source tables reported by Relational Migrator and should not be interpreted as independent proof that every source row was migrated.
 
-**Note:** The migration review summary reported 8,565 rows to migrate, while the MySQL source contained 8,743 records. The difference of 178 was not conclusively explained during this demonstration. The successful verification result applies to the collections and source tables reported by Relational Migrator; it should not be interpreted as independent proof that every source row was migrated.
+---
 
 ## 7. Database Backup and Restoration
 
-Database backups are included to support reproducibility.
-
 ### MySQL Backup
-
-The MySQL database can be exported using MySQL Workbench:
-
-1. Open Server → Data Export.
-2. Select `avalara_simulation`.
-3. Select all six tables.
-4. Choose Dump Structure and Data.
-5. Export to a self-contained SQL file.
-
-Expected backup:
-
-```text
-mysql/
-└── avalara_simulation.sql
-```
-
-Restore using:
+Restore the MySQL source database from `mysql/avalara_simulation.sql`:
 
 ```bash
 mysql -u root -p < mysql/avalara_simulation.sql
 ```
 
 ### MongoDB Backup
-
-MongoDB Atlas was exported using `mongodump`.
-
-Expected backup:
-
-```text
-mongodb/
-└── backup/
-    └── avalara_migration/
-        ├── companies.bson
-        ├── companies.metadata.json
-        ├── customers.bson
-        ├── customers.metadata.json
-        ├── items.bson
-        ├── items.metadata.json
-        ├── taxCodes.bson
-        ├── taxCodes.metadata.json
-        ├── transactions.bson
-        └── transactions.metadata.json
-```
-
-Restore using MongoDB Database Tools:
+Restore the MongoDB Atlas backup from `mongodb/backup/avalara_migration/` using MongoDB Database Tools:
 
 ```bash
 mongorestore \
@@ -224,101 +174,89 @@ mongorestore \
   mongodb/backup
 ```
 
-Use an empty destination database or intentionally replace existing collections when restoring.
+---
 
 ## 8. Repository Structure
 
 ```text
 avalara_mysql_mongodb_migration_simulation/
-│
+├── dataset/
+│   ├── generate_dataset.py          # Synthetic dataset generator
+│   ├── load_dataset.py              # MySQL data loader
+│   ├── generated/                   # Generated CSVs & manifest
+│   ├── mongodb/backup/              # MongoDB BSON backup
+│   └── mysql/                       # MySQL schema, indexes & dump
+├── docs/
+│   ├── Project_Report_NIT_Delhi_LaTeX_Style (1).pdf
+│   ├── Project_Report_NIT_Delhi_LaTeX_Style (1).docx
+│   ├── Project_Synopsis_NIT_Delhi.pdf
+│   ├── Project_Synopsis_NIT_Delhi.docx
+│   └── screenshot/                  # Migration & verification screenshots
+├── migration/
+│   ├── Avalara_Baseline_Migration.relmig
+│   └── Avalara_Optimized_Migration.relmig
+├── mongodb/backup/avalara_migration/
 ├── mysql/
 │   ├── schema.sql
 │   ├── indexes.sql
 │   └── avalara_simulation.sql
-│
-├── mongodb/
-│   └── backup/
-│       └── avalara_migration/
-│
-├── dataset/
-│   ├── generate_dataset.py
-│   ├── load_dataset.py
-│   └── generated/
-│       ├── companies.csv
-│       ├── customers.csv
-│       ├── tax_codes.csv
-│       ├── items.csv
-│       ├── transactions.csv
-│       ├── transaction_lines.csv
-│       └── dataset_manifest.json
-│
-├── migration/
-│   ├── baseline.relmig
-│   └── optimized.relmig
-│
-├── docs/
-│   ├── screenshots/
-│   ├── diagrams/
-│   └── project_report.pdf
-│
-├── README.md
+├── test_atlas.py                    # MongoDB Atlas connection test
 ├── pyproject.toml
+├── requirements.txt
 ├── uv.lock
 ├── .python-version
 ├── .env.example
 └── .gitignore
 ```
 
+---
+
 ## 9. Running the Python Dataset Generator
 
-Install uv if it is not already installed:
-
-```bash
-pip install uv
-```
-
-Install project dependencies:
-
-```bash
-uv sync
-```
-
-Generate the synthetic dataset:
-
-```bash
-uv run python dataset/generate_dataset.py
-```
-
-Load the generated data into MySQL:
-
-```bash
-uv run python dataset/load_dataset.py
-```
-
-Configure database credentials through environment variables in a local `.env` file.
-
-Never commit `.env` or database credentials to GitHub.
-
-## 10. Conclusion
-
-This project demonstrates the migration of a relational tax-management database from MySQL to MongoDB Atlas using MongoDB Relational Migrator.
-
-It covers source schema preparation, synthetic data generation, relational-to-document mapping, embedding related records, snapshot migration, verification, and database backup.
-
-The resulting MongoDB model contains five top-level collections, with transaction line items embedded inside their parent transactions.
-
-The project provides a reproducible demonstration of migrating a relational database into a document-oriented database using MongoDB's migration tooling.
+1. **Install `uv`** (if not already installed):
+   ```bash
+   pip install uv
+   ```
+2. **Install dependencies:**
+   ```bash
+   uv sync
+   ```
+3. **Configure environment variables:** Copy `.env.example` to `.env` and fill in your local MySQL / MongoDB credentials *(never commit `.env`)*.
+4. **Generate the synthetic dataset:**
+   ```bash
+   uv run python dataset/generate_dataset.py
+   ```
+5. **Load data into MySQL:**
+   ```bash
+   uv run python dataset/load_dataset.py
+   ```
 
 ---
 
-**Project Type:** Academic Database Migration Demonstration
+## 10. Documentation & Reports
 
-**Data:** Synthetic
+- **Project Synopsis:** [Project_Synopsis_NIT_Delhi.pdf](docs/Project_Synopsis_NIT_Delhi.pdf) ([DOCX](docs/Project_Synopsis_NIT_Delhi.docx))
+- **Project Report:** [Project_Report_NIT_Delhi_LaTeX_Style (1).pdf](docs/Project_Report_NIT_Delhi_LaTeX_Style%20(1).pdf) ([DOCX](docs/Project_Report_NIT_Delhi_LaTeX_Style%20(1).docx))
 
-**Source:** MySQL
+<details>
+<summary><b>📸 View Migration & Verification Screenshots</b></summary>
 
-**Target:** MongoDB Atlas
+<br/>
 
-**Migration Tool:** MongoDB Relational Migrator
+| | |
+|---|---|
+| ![Screenshot 1](docs/screenshot/Screenshot%202026-11-23%20213833.png) | ![Screenshot 2](docs/screenshot/Screenshot%202026-11-23%20213846.png) |
+| ![Screenshot 3](docs/screenshot/Screenshot%202026-11-23%20213902.png) | ![Screenshot 4](docs/screenshot/Screenshot%202026-11-23%20213920.png) |
+| ![Screenshot 5](docs/screenshot/Screenshot%202026-11-23%20214246.png) | ![Screenshot 6](docs/screenshot/Screenshot%202026-11-23%20221312.png) |
+| ![Screenshot 7](docs/screenshot/Screenshot%202026-11-23%20221423.png) | ![Screenshot 8](docs/screenshot/Screenshot%202026-11-23%20223425.png) |
 
-**Author:** Satvik Nagar
+</details>
+
+---
+
+<div align="center">
+
+**Author:** Satvik Nagar • **Project Type:** Academic Database Migration Demonstration (NIT Delhi)  
+**Source:** MySQL (`avalara_simulation`) • **Target:** MongoDB Atlas (`avalara_migration`) • **Tool:** MongoDB Relational Migrator
+
+</div>
