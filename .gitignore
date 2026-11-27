@@ -1,0 +1,19 @@
+# Python environment
+.venv/
+
+# Secrets
+.env
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# IDE
+.vscode/
+
+# Temporary files
+*.log
+
+# Jupyter Notebook checkpoints & scratch
+.ipynb_checkpoints/
+Untitled.ipynb
